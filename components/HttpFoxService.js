@@ -1699,6 +1699,7 @@ HttpFoxRequest.prototype =
 			&& this.ResponseStatus != requestEvent.ResponseStatus
 			&& this.ResponseStatus != 304)
 		{
+			//Should work here
 			this.ResponseStatus = requestEvent.ResponseStatus;
 			this.ResponseStatusText = requestEvent.ResponseStatusText;
 		}
