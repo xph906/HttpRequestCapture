@@ -1318,3 +1318,114 @@ function shutdownHttpFox()
 
 	HttpFox = null;
 }
+function isFirefox31()
+	{
+		if (typeof TabsProgressListener == "undefined")
+		{
+			return false;
+		}
+
+		if (typeof TabsProgressListener.onRefreshAttempted != "function")
+		{
+			return false;
+		}
+
+		return true;
+	}
+
+	function isFirefox30()
+	{
+		if (typeof nsBrowserStatusHandler == "undefined")
+		{
+			return false;
+		}
+
+		if (typeof nsBrowserStatusHandler.prototype == "undefined")
+		{
+			return false;
+		}
+
+		if (typeof nsBrowserStatusHandler.prototype.onRefreshAttempted != "function")
+		{
+			return false;
+		}
+
+		return true;
+	}
+
+	function isLegacy() {
+		return !isFirefox30() && !isFirefox31();
+	}
+
+dump("DEBUG: x30:"+isFirefox30()+" x31:"+isFirefox31()+"\n\n");
+
+function MetaRefreshRecorder(db){
+	this.init(db);
+}
+
+MetaRefreshRecorder.prototype = {
+	DBService : null,
+	init : function(db){
+		try{
+			if (TabsProgressListener.onRefreshAttempted != this.blockRefreshs)
+			{
+				dump("TabsProgressListener.onRefreshAttempted != blockRefreshs\n");
+				TabsProgressListener.onRefreshAttemptedRefreshBlocker 
+							= TabsProgressListener.onRefreshAttempted;
+			}
+
+			TabsProgressListener.onRefreshAttempted = this.blockRefreshs.bind(this);
+		}catch(e){
+			dump("MetaRefreshRecorder init error "+e);
+		}
+		this.DBService = db;
+			
+	},
+
+	blockRefreshs : function(browser, progress, uri, timeout, same)
+	{
+		var document = progress.DOMWindow.QueryInterface(Components.interfaces.nsIInterfaceRequestor).
+					getInterface(Components.interfaces.nsIWebNavigation).
+					QueryInterface(Components.interfaces.nsIDocShell).contentViewer.DOMDocument;
+		if (document == null)
+		{
+			//dump("blockRefreshs", "document == null\n");
+			return true;
+		}
+		if (!(document instanceof HTMLDocument)) {
+			//dump("blockRefreshs", "!(document instanceof HTMLDocument)\n");
+			return true;
+		}
+		dump("\nMETA: "+document.URL+" ==> "+uri.asciiSpec+"\n");
+		var update = {};
+		update["from_url"] = this.DBService.escapeString(document.URL);
+		update["to_url"] = this.DBService.escapeString(uri.asciiSpec);
+		var statement = this.DBService.createInsert("redirects",update);
+		this.DBService.executeSQL(statement,true);
+		return true;
+	},
+	
+	//Should be useless
+	start : function(){
+		//dump("Start Listenting DOMContentLoaded\n");
+		window.addEventListener("DOMContentLoaded", this, false);
+	},
+	handleEvent : function(event){
+		//dump("handleEvent", "event.type == " + event.type+"\n");
+		switch (event.type)
+		{
+			case "DOMContentLoaded":
+			{
+				this.handleRefreshs(event);
+				break;
+			}
+		}
+	},
+	handleRefreshs : function(event)
+	{
+		dump("handle DOMContentLoaded\n");
+		//blockerStrategy.handleRefreshs(event);
+	}
+}
+
+var recorder = new MetaRefreshRecorder(HttpFox.HttpFoxService.DataBase);

@@ -45,7 +45,6 @@ catch(e) {}
 var http_request_count = 0;
 var page_info = {};
 
-
 var Base64 = {
 
 	// private property
@@ -124,27 +123,32 @@ var Base64 = {
 
 	// private method for UTF-8 encoding
 	_utf8_encode : function (string) {
-	    string = string.replace(/\r\n/g,"\n");
-	    var utftext = "";
+		try{
+			string = string.replace(/\r\n/g,"\n");
+		    var utftext = "";
 
-	    for (var n = 0; n < string.length; n++) {
+		    for (var n = 0; n < string.length; n++) {
 
-	        var c = string.charCodeAt(n);
+		        var c = string.charCodeAt(n);
 
-	        if (c < 128) {
-	            utftext += String.fromCharCode(c);
-	        }
-	        else if((c > 127) && (c < 2048)) {
-	            utftext += String.fromCharCode((c >> 6) | 192);
-	            utftext += String.fromCharCode((c & 63) | 128);
-	        }
-	        else {
-	            utftext += String.fromCharCode((c >> 12) | 224);
-	            utftext += String.fromCharCode(((c >> 6) & 63) | 128);
-	            utftext += String.fromCharCode((c & 63) | 128);
-	        }
+		        if (c < 128) {
+		            utftext += String.fromCharCode(c);
+		        }
+		        else if((c > 127) && (c < 2048)) {
+		            utftext += String.fromCharCode((c >> 6) | 192);
+		            utftext += String.fromCharCode((c & 63) | 128);
+		        }
+		        else {
+		            utftext += String.fromCharCode((c >> 12) | 224);
+		            utftext += String.fromCharCode(((c >> 6) & 63) | 128);
+		            utftext += String.fromCharCode((c & 63) | 128);
+		        }
 
-	    }
+		    }
+		}catch(e){
+			return string;
+		}
+	 
 
 	    return utftext;
 	},
@@ -220,7 +224,9 @@ HttpFoxDBService.prototype = {
         					"url TEXT,"+"\n"+
         					"method TEXT,"+"\n" +
         					"referrer TEXT,"+"\n" +
-        					"page_id INTEGER);";
+        					"page_id INTEGER,"+"\n" +
+        					"content_type TEXT,"+"\n" +
+        					"is_redirect INTEGER);";
         					
         this.executeSQL(create_req_table,false);
         var create_header_table =  "CREATE TABLE http_request_headers("+"\n"+
@@ -235,6 +241,13 @@ HttpFoxDBService.prototype = {
         					"location TEXT,"+"\n"+
         					"parent_id INTEGER);";
         this.executeSQL(create_page_table,false);
+
+        var create_redirect_table = "CREATE TABLE redirects ("+"\n"+
+        							" id INTEGER PRIMARY KEY,"+"\n"+
+        							" from_url TEXT,"+"\n"+
+        							" to_url TEXT, " +"\n"+
+        							" unique (from_url, to_url));";
+        this.executeSQL(create_redirect_table,false);
 
 		// Setup async queue timer
 		this.timer = Components.classes["@mozilla.org/timer;1"].createInstance(Components.interfaces.nsITimer);
@@ -255,7 +268,7 @@ HttpFoxDBService.prototype = {
 	},
 
 	executeSQL : function(statement, async) {
-		dump("executeSQL: "+statement+"\n");
+	//	dump("executeSQL: "+statement+"\n");
 		try {
 			if(!async)
 				this.dbConnection.executeSimpleSQL(statement);
@@ -371,6 +384,8 @@ HttpFoxService.prototype =
 	HttpFoxWindow: null,
 
 	DataBase : null,
+
+	//MetaRecorder : null,
 	
 	init: function() 
 	{
@@ -391,6 +406,7 @@ HttpFoxService.prototype =
 			dump("Error in initializing DataBase: "+e);
 		}
 		
+		//this.MetaRecorder = new MetaRefreshRecorder(this.DataBase);
 		
 		if (this.Preferences.StartAtBrowserStart)
 		{
@@ -1323,7 +1339,7 @@ HttpFoxRequest.prototype =
 		UselessHeaders["accept-encoding"] = true;
 		UselessHeaders["accept-language"] = true;
 		UselessHeaders["accept"] = true;
-		UselessHeaders["user-agent"] = true;
+		//UselessHeaders["user-agent"] = true;
 		UselessHeaders["host"] = true;
 		UselessHeaders["referer"] = true;
 		UselessHeaders["pragma"] = true;
@@ -1345,6 +1361,7 @@ HttpFoxRequest.prototype =
 			update["referrer"] = this.DBService.escapeString("");
 		}
 		update["page_id"] = this.PageInfo.pageID;
+		update["is_redirect"] = 0;
 
 	/*	dump("Store Request :");
 		for(var item in update){
@@ -1695,6 +1712,26 @@ HttpFoxRequest.prototype =
 			this.ResponseProtocolVersion = requestEvent.ResponseProtocolVersion;
 		}
 		
+	/*	if (requestEvent.ResponseStatus != null 
+			&& this.ResponseStatus != requestEvent.ResponseStatus)
+		{
+			this.StoreNewHeaderToDB("response",requestEvent.ResponseStatus);
+			this.StoreNewHeaderToDB("responsetext",requestEvent.ResponseStatusText);
+			//dump("change response from "+this.ResponseStatus+" to "+requestEvent.ResponseStatus);
+		}
+	*/
+
+		try{
+			var updateContentType = "UPDATE http_requests "+ 
+									"SET content_type = '" + 
+									requestEvent.ContentType+"' "+  
+									"WHERE id = "+this.id+";";
+			this.DBService.executeSQL(updateContentType, true);	
+			
+		}catch(e){
+			dump("Error outputing contenttype1: "+e+"\n");
+		}
+
 		if (requestEvent.ResponseStatus != null 
 			&& this.ResponseStatus != requestEvent.ResponseStatus
 			&& this.ResponseStatus != 304)
@@ -1702,6 +1739,31 @@ HttpFoxRequest.prototype =
 			//Should work here
 			this.ResponseStatus = requestEvent.ResponseStatus;
 			this.ResponseStatusText = requestEvent.ResponseStatusText;
+			this.StoreNewHeaderToDB("response",requestEvent.ResponseStatus);
+
+			//var isRedirectTmp = 0;
+			//is_redirect
+			if(requestEvent.ResponseStatus>=300 
+				&& requestEvent.ResponseStatus <400
+				&& requestEvent.ResponseStatus != 304){
+				//this.StoreNewHeaderToDB("responsetext",this.ResponseStatusText);
+				//isRedirectTmp = 1;
+				dump("DEBUG REDIRECT_REQ: "+this.Url+" "+this.id+"\n");
+				try{
+					dump("  Content Type:"+requestEvent.ContentType+" || Status:"+requestEvent.ResponseStatus+"\n");
+				}catch(e){
+					dump("Error outputing contenttype2: "+e+"\n");
+				}
+				
+				var updateStatement = "UPDATE http_requests "+ 
+									  "SET is_redirect = 1 "+  
+									  "WHERE id = "+this.id+";";  
+				dump("  DEBUG:"+updateStatement);
+				dump("\n");
+				this.DBService.executeSQL(updateStatement, true);					  	
+			}
+
+
 		}
 		
 		if (requestEvent.Context != null) 
@@ -1777,6 +1839,7 @@ HttpFoxRequest.prototype =
 			&& this.ResponseStatus == 200)
 		{
 			this.IsFromCache = true;
+			//this.StoreNewHeaderToDB("fromcache","true");
 		}
 		
 		if (this.IsFromCache != true && requestEvent.IsFromCache != null)
@@ -1835,6 +1898,13 @@ HttpFoxRequest.prototype =
 		if (requestEvent.ResponseHeaders != null)
 		{
 			this.ResponseHeaders = requestEvent.ResponseHeaders;
+			//XIANG_CODE
+			for(var header in this.ResponseHeaders){
+			//	dump("header: "+header+"\n");
+				if(header == "Location"){
+					this.StoreNewHeaderToDB("location",this.ResponseHeaders[header]);
+				}
+			}
 		}
 
 		if (requestEvent.CookiesSent != null)
@@ -2374,6 +2444,8 @@ HttpFoxRequestEvent.prototype =
 		try { this.IsNoCacheResponse = this.HttpChannel.isNoCacheResponse(); } catch(ex) {}
 		try { this.EntityId = this.HttpChannel.EntityId; } catch(ex) {}
 		
+	//	dump("DEBUG: "+this.ContentType+" "+this.Url+"\n");
+
 		// event specific infos
 		if (this.EventSource == this.HttpFox.HttpFoxEventSourceType.ON_MODIFY_REQUEST)
 		{
@@ -4249,3 +4321,5 @@ if (typeof XPCOMUtils != "undefined")
 		var NSGetFactory = XPCOMUtils.generateNSGetFactory([HttpFoxService]);	
 	}
 }
+
+
