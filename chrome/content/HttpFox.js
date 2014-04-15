@@ -241,7 +241,8 @@ HttpFoxController.prototype =
 	//C BUTTON (on all controllers)
 	cmd_hf_startWatching: function ()
 	{
-		dump("cmd_hf_startWatching: "+this.HttpFoxService.IsWatching);
+		dump("cmd_hf_startWatching: "+this.HttpFoxService.IsWatching+"\n");
+		dump("NOTE that currently stop is DISABLED\n");
 		if (!this.HttpFoxService.IsWatching)
 		{
 			this.HttpFoxService.startWatching();
@@ -1397,9 +1398,12 @@ MetaRefreshRecorder.prototype = {
 			return true;
 		}
 		dump("\nMETA: "+document.URL+" ==> "+uri.asciiSpec+"\n");
+
 		var update = {};
-		update["from_url"] = this.DBService.escapeString(document.URL);
-		update["to_url"] = this.DBService.escapeString(uri.asciiSpec);
+		update["from_url"] = escape(document.URL);
+		update["to_url"] = escape(uri.asciiSpec);
+		if(update["from_url"] == update["to_url"])
+			return true;
 		var statement = this.DBService.createInsert("redirects",update);
 		this.DBService.executeSQL(statement,true);
 		return true;
