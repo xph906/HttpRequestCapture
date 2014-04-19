@@ -146,6 +146,7 @@ HttpFoxController.prototype =
 	//G
 	cmd_hf_togglePanel: function ()
 	{
+		dump("cmd_hf_togglePanel has been clicked\n");
 		var HttpFoxPanel = document.getElementById("hf_PanelNormal");
 		var HttpFoxPanelSplitter = document.getElementById("hf_PanelSplitter");
 
@@ -1397,14 +1398,17 @@ MetaRefreshRecorder.prototype = {
 			//dump("blockRefreshs", "!(document instanceof HTMLDocument)\n");
 			return true;
 		}
-		dump("\nMETA: "+document.URL+" ==> "+uri.asciiSpec+"\n");
-
+		
 		var update = {};
-		update["from_url"] = escape(document.URL);
-		update["to_url"] = escape(uri.asciiSpec);
-		if(update["from_url"] == update["to_url"])
+		update["from_url"] = this.DBService.escapeString(document.URL.toLowerCase());
+		update["to_url"] = this.DBService.escapeString(encodeURI(uri.asciiSpec.toLowerCase()) );
+		if(update["from_url"] == update["to_url"]){
+			dump("\nMETA: SAME"+update["from_url"]+" ==> "+update["to_url"]+"\n");
 			return true;
-		var statement = this.DBService.createInsert("redirects",update);
+		}
+		dump("\nMETA: DIFF"+update["from_url"]+" ==> "+update["to_url"]+"\n");
+		var statement = this.DBService.createInsert("meta_redirects",update);
+		dump("STATEMENT: "+statement);
 		this.DBService.executeSQL(statement,true);
 		return true;
 	},
@@ -1431,5 +1435,79 @@ MetaRefreshRecorder.prototype = {
 		//blockerStrategy.handleRefreshs(event);
 	}
 }
-
 var recorder = new MetaRefreshRecorder(HttpFox.HttpFoxService.DataBase);
+/*
+function JSRedirectRecorder(db){
+	this.init(db);
+}
+JSRedirectRecorder.prototype = {
+	DBService : null,
+	init : function(db){
+		this.DBService = db;
+		this.start();
+	},
+	start : function(){
+		var observerService = Components.classes["@mozilla.org/observer-service;1"].getService(Components.interfaces.nsIObserverService);
+		observerService.addObserver(this, "content-document-global-created", false);
+	},
+	
+	observe: function(subject, topic, data) 
+	{
+		if(topic == "content-document-global-created" &&
+        		subject instanceof Components.interfaces.nsIDOMWindow)
+		{
+			subject.QueryInterface(Components.interfaces.nsIDOMWindow);
+			//dump("content-document-global-created event "+subject+"\n");
+			var wnd = XPCNativeWrapper.unwrap(subject);
+			var location = XPCNativeWrapper.unwrap(subject.location);
+			//dump("content-document-global-created: "+wnd.document.URL+"\n");
+			var method = this.onLocationChange(wnd);
+			wnd.watch("location", method);
+			wnd.document.watch("location", method);
+			wnd.location.watch("href", method);
+			
+		
+		}
+	},
+	onBeforeUnload : function(wnd){
+		var wind = wnd;
+		function method(e){
+			dump("onBeforeUnload: "+wind.location.href+"\n");
+			for(var x in wind.location){
+				dump("  "+wind.location[x]+"\n")
+			}
+			return ;
+		}
+		return method;
+	},
+
+	onLocationChange : function(wnd){
+		var wind = wnd;
+		function inner(id, oldVal, newVal){
+			try{
+				if(oldVal instanceof Components.interfaces.nsIHttpChannel){
+					dump("onLocationChange oldValue:"+oldVal.URI.asciiSpec+"\n");
+				}
+				//oldVal.QueryInterface(Components.interfaces.nsIHttpChannel);
+				
+			}catch(e){
+				dump("Error onLocationChange "+e+"\n "+oldVal+" "+newVal+"\n");
+			}
+			if(newVal instanceof String){
+				var string = 1;
+			}else{
+				var string = typeof newVal;
+			}
+			dump("onLocationChange From: "+wind.document.URL+"");
+			dump("onLocationChange: "+id+" -> "+newVal+" "+string+"\n");
+
+			
+			return newVal;
+		};
+		return inner;
+	}
+}
+
+
+var redirector = new JSRedirectRecorder(HttpFox.HttpFoxService.DataBase);
+*/

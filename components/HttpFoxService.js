@@ -254,7 +254,7 @@ HttpFoxDBService.prototype = {
         					"parent_id INTEGER);";
         this.executeSQL(create_page_table,false);
 
-        var create_redirect_table = "CREATE TABLE redirects ("+"\n"+
+       var create_redirect_table = "CREATE TABLE meta_redirects ("+"\n"+
         							" id INTEGER PRIMARY KEY,"+"\n"+
         							" from_url TEXT,"+"\n"+
         							" to_url TEXT, " +"\n"+
@@ -316,7 +316,7 @@ HttpFoxDBService.prototype = {
 		// Convert to string if necessary
 		if(typeof string != "string")
 			string = "" + string;
-
+		string = encodeURI(string);
 		// Go character by character doubling 's
 		var escapedString = [ ];
 		escapedString.push("'");
@@ -584,7 +584,12 @@ HttpFoxService.prototype =
 		//}
 		request.setPageInfo(newPage,true);
 		this.dumpRequest(request,"NewRequest");
-		
+		try{
+			request.setContentType(requestEvent.ContentType);
+		}catch(e){
+			dump("Error addNewRequest Get ContentType: "+e+"\n");
+		}
+		//dump("addNewRequest Get ContentType: "+request.ContentType+"\n");
 		//include StoreHeaderToDB
 		request.StoreRequestToDB();
 		
@@ -1251,6 +1256,7 @@ HttpFoxRequest.prototype =
 	StoredKeys : null,
 	DBService : null,
 	UselessHeaders : null,
+	ContentType : null,
 
 	// custom request properties
 	StartTimestamp: null,
@@ -1379,6 +1385,7 @@ HttpFoxRequest.prototype =
 		}
 		update["page_id"] = this.PageInfo.pageID;
 		update["is_redirect"] = 0;
+		update["content_type"] = this.DBService.escapeString(this.ContentType);
 
 	/*	dump("Store Request :");
 		for(var item in update){
@@ -1504,6 +1511,11 @@ HttpFoxRequest.prototype =
 	isEffectivePageInfo: function(){
 		return this.PageInfo.pageID != -1;
 	},
+
+	setContentType : function(content_type){
+		this.ContentType = content_type;
+	},
+
 
 	checkRequestState: function()
 	{
@@ -1742,11 +1754,14 @@ HttpFoxRequest.prototype =
 	*/
 
 		try{
-			var updateContentType = "UPDATE http_requests "+ 
+			if(requestEvent.ResponseStatus != null 
+				&& requestEvent.ResponseStatus <400){
+				var updateContentType = "UPDATE http_requests "+ 
 									"SET content_type = '" + 
 									requestEvent.ContentType+"' "+  
 									"WHERE id = "+this.id+";";
-			this.DBService.executeSQL(updateContentType, true);	
+				this.DBService.executeSQL(updateContentType, true);	
+			}		
 			
 		}catch(e){
 			dump("Error outputing contenttype1: "+e+"\n");
@@ -2917,6 +2932,7 @@ HttpFoxObserver.prototype =
 		observerService.addObserver(this, "http-on-modify-request", false);
 		observerService.addObserver(this, "http-on-examine-response", false);
 		observerService.addObserver(this, "http-on-examine-merged-response", false);
+		//observerService.addObserver(this, "content-document-global-created", false);
 	},
 	
 	removeListener: function()
@@ -2984,10 +3000,7 @@ HttpFoxObserver.prototype =
 				// guess this means the request is aborted and/or cached.
 			}
 		}
-	//	pageId = this.pageIDFromHttpChannel(HttpChannel);
-		
-		//dump("OnModifyRequest "+"\n");
-	//	this.dumpWindowId(HttpChannel);
+
 		try {
 			var page = this.pageIDFromHttpChannel(HttpChannel);
 			// assume it is always a new request
@@ -3099,9 +3112,55 @@ HttpFoxObserver.prototype =
 			subject.QueryInterface(Components.interfaces.nsIHttpChannel);
 			this.onExamineMergedResponse(subject);
 		}
+	/*	else if (topic == "content-document-global-created" &&
+        					subject instanceof Components.interfaces.nsIDOMWindow)
+		{
+			subject.QueryInterface(Components.interfaces.nsIDOMWindow);
+			//dump("content-document-global-created event "+subject+"\n");
+			var wnd = XPCNativeWrapper.unwrap(subject);
+			var location = XPCNativeWrapper.unwrap(subject.location);
+			//dump("content-document-global-created: "+wnd.document.URL+"\n");
+			var method = this.onLocationChange(wnd);
+			wnd.watch("location", method);
+			wnd.document.watch("location", method);
+			wnd.location.watch("href", method);
+			//wnd.location.watch("hostname", method);
+			//wnd.location.watch("pathname", method);
+			//wnd.location.watch("hash", method);
+			
+			wnd.location.assign = null;
+			location.assign = null;
+
+		}
+		*/
 	},
 	/*********************************************/
-		
+	onLocationChange : function(wnd){
+		var wind = wnd;
+		function inner(id, oldVal, newVal){
+			try{
+				if(oldVal instanceof Components.interfaces.nsIHttpChannel){
+					dump("onLocationChange oldValue:"+oldVal.URI.asciiSpec+"\n");
+				}
+				//oldVal.QueryInterface(Components.interfaces.nsIHttpChannel);
+				
+			}catch(e){
+				dump("Error onLocationChange "+e+"\n "+oldVal+" "+newVal+"\n");
+			}
+			if(newVal instanceof String){
+				var string = 1;
+			}else{
+				var string = typeof newVal;
+			}
+			dump("onLocationChange Window: "+wind.document.URL+"\n");
+			dump("onLocationChange: "+id+" -> "+newVal+" "+string+"\n");
+
+			
+			return newVal;
+		};
+		return inner;
+	},
+	
 	/**
 	* nsISupportsString
 	*/
