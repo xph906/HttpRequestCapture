@@ -673,14 +673,6 @@ HttpFoxService.prototype =
 			var page = this.Observer.pageIDFromHttpChannel(requestEvent.HttpChannel);
 			if(page.pageID != -1){
 				requestEvent.setPageInfo(page);
-			//	dump("handleRequestEvent:"+requestEvent.Url+" pageid:");
-			//	this.Observer.dumpWindowId(page);
-			//	dump(requestEvent.PageInfo.pageID+"\n");
-			}
-			//else{
-			//	dump("Remain WindowID: ");
-			//	this.Observer.dumpWindowId(requestEvent.PageInfo);
-			//}
 		}
 		catch (ex) 
 		{
@@ -704,14 +696,7 @@ HttpFoxService.prototype =
 				//dump("Error Return Here2 "+ex+"\n");
 			}
 		}
-	
-	//	dump("handleRequestEvent: "+requestEvent.HttpChannel.URI.spec+" \n");
-	/*	dump("handleRequestEvent: "+requestEvent.EventSource +"\n");
-		requestEvent.HttpChannel.visitRequestHeaders({visitHeader: function(name, value) {
-			dump(name+"->"+value+"\n");
-		}});
-		dump("\n");
-	*/
+
 		switch(requestEvent.EventSource) 
 		{
 			case this.HttpFoxEventSourceType.ON_MODIFY_REQUEST:
@@ -733,16 +718,10 @@ HttpFoxService.prototype =
 						//only ON_MODIFY_REQUEST can be a new one. discard other types
 						return;
 					}
-					// new request. add.
-				//	dump("handleRequestEvent: addNewRequest \n");
 					this.addNewRequest(requestEvent);
-					//dump("handleRequestEvent: addNewRequest2 "+ this.DataBase +"\n");
-					
-					// not found. not good. TODO: handling
 				}
 				else 
 				{
-				//	dump("handleRequestEvent: updateReqyest\n");
 					this.updateRequest(index, requestEvent);	
 				}
 				break;
